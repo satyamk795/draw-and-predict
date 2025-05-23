@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Draw & Predict</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #4e54c8, #8f94fb);
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h2 {
+      font-size: 2.5rem;
+      font-weight: 600;
+      margin-bottom: 25px;
+      text-align: center;
+    }
+
+    .canvas-container {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 25px 30px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+      text-align: center;
+    }
+
+    canvas {
+      border: 2px solid #444;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      margin: 8px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      letter-spacing: 0.5px;
+    }
+
+    .btn-clear {
+      background-color: #ff4d4f;
+      color: white;
+      border-color: #ff4d4f;
+    }
+
+    .btn-clear:hover {
+      background-color: #fff;
+      color: #ff4d4f;
+      border-color: #ff4d4f;
+    }
+
+    .btn-predict {
+      background-color: #22c55e;
+      color: white;
+      border-color: #22c55e;
+    }
+
+    .btn-predict:hover {
+      background-color: #fff;
+      color: #22c55e;
+      border-color: #22c55e;
+    }
+
+    #result {
+      font-size: 1.2rem;
+      margin-top: 20px;
+      color: #fefefe;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    @media screen and (max-width: 600px) {
+      .canvas-container {
+        width: 100%;
+        padding: 20px 10px;
+      }
+
+      h2 {
+        font-size: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h2>🎨 Draw Something!</h2>
+  <canvas id="canvas" width="280" height="280"></canvas><br>
+  <button class="btn btn-clear" onclick="clearCanvas()">Clear</button>
+  <button class="btn btn-predict" onclick="predict()">Predict</button>
+  <div id="result">Prediction: ...</div>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 15;
+    ctx.lineCap = "round";
+
+    let drawing = false;
+
+    canvas.onmousedown = () => { drawing = true; };
+    canvas.onmouseup = () => { drawing = false; ctx.beginPath(); };
+    canvas.onmouseout = () => { drawing = false; ctx.beginPath(); };
+
+    canvas.onmousemove = (e) => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+    };
+
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      document.getElementById("result").innerText = "Prediction: ...";
+    }
+
+    function getFlippedDataURL() {
+      const offscreenCanvas = document.createElement("canvas");
+      offscreenCanvas.width = canvas.width;
+      offscreenCanvas.height = canvas.height;
+      const offscreenCtx = offscreenCanvas.getContext("2d");
+
+      offscreenCtx.drawImage(canvas, 0, 0);
+
+      const imageData = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+      const halfHeight = offscreenCanvas.height / 2;
+      for (let y = 0; y < halfHeight; y++) {
+        for (let x = 0; x < offscreenCanvas.width; x++) {
+          const topIndex = (y * offscreenCanvas.width + x) * 4;
+          const bottomIndex = ((offscreenCanvas.height - y - 1) * offscreenCanvas.width + x) * 4;
+          for (let i = 0; i < 4; i++) {
+            const temp = imageData.data[topIndex + i];
+            imageData.data[topIndex + i] = imageData.data[bottomIndex + i];
+            imageData.data[bottomIndex + i] = temp;
+          }
+        }
+      }
+      offscreenCtx.putImageData(imageData, 0, 0);
+
+      return offscreenCanvas.toDataURL("image/png");
+    }
+
+    function predict() {
+      const dataURL = getFlippedDataURL();
+      document.getElementById("result").innerText = "Predicting...";
+      fetch("/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataURL })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if(data.error){
+          document.getElementById("result").innerText = "Error: " + data.error;
+        } else {
+          document.getElementById("result").innerText =
+            `Prediction: ${data.label} (${data.confidence}%)`;
+        }
+      })
+      .catch(() => {
+        document.getElementById("result").innerText = "Error: Could not reach server";
+      });
+    }
+  </script>
+</body>
+</html>
